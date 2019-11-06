@@ -62,10 +62,6 @@ impl fmt::Display for Row {
 }
 
 impl Row {
-  fn print_row(&self) {
-    println!("({}, {}, {})", self.id, self.username, self.email);
-  }
-
   fn serialize(&self) -> Vec<u8> {
     let mut buf = vec![0; ROW_SIZE];
     BigEndian::write_u32(&mut buf, self.id);
@@ -108,23 +104,6 @@ impl Row {
     let bytes = buf[pos..end].to_vec();
 
     String::from_utf8(bytes).unwrap()
-  }
-}
-
-#[derive(Default)]
-struct Page {
-  rows: [Option<Row>; ROWS_PER_PAGE]
-}
-
-struct Table {
-  num_rows: usize,
-  pages: [Option<Page>; TABLE_MAX_PAGES],
-}
-
-impl Default for Table {
-  fn default() -> Table {
-    let pages: [Option<Page>; TABLE_MAX_PAGES] = Default::default();
-    Table { pages: pages, num_rows: 0 }
   }
 }
 
@@ -189,8 +168,6 @@ fn read_input() -> String {
 }
 
 fn main() {
-  let mut table: Table = Table::default();
-
   loop {
     print_prompt();
     let mut buffer = read_input();
@@ -199,19 +176,17 @@ fn main() {
     if buffer.starts_with('.') {
       match do_meta_command(&buffer) {
         MetaCommandResult::Success => continue,
-        MetaCommandResult::Unrecognized => {
-          print!("Unrecognized command: {}", buffer);
-          continue;
-        } 
+        MetaCommandResult::Unrecognized => continue
       }
     }
 
     if let Ok(s) = prepare_statement(&buffer) {
-      match execute_statement(&s) {
-
+      match s.typ {
+        StatementType::Insert => println!("Performing INSERT"),
+        StatementType::Select => println!("Performing SELECT")
       }
     } else {
-      println!("Cannot execute statement");
+      println!("Unrecognized keyword at start of {}", buffer);
     }
   }
 }
