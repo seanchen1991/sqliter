@@ -1,9 +1,14 @@
+#[macro_use]
+extern crate text_io;
+
 use std::fmt;
 use std::mem;
 use std::process;
 use std::io::prelude::*;
 use std::io::{stdin, stdout};
-use byteorder::{ByteOrder, BigEndian};
+// use byteorder::{ByteOrder, BigEndian};
+
+use arrayvec::ArrayString;
 
 static HELP_TEXT: &str = "
 SQLiter: A SQLite clone written in Rust.
@@ -33,6 +38,21 @@ const TABLE_MAX_PAGES: usize = 32;
 const ROWS_PER_PAGE: usize = PAGE_SIZE / ROW_SIZE;
 const TABLE_MAX_ROWS: usize = ROWS_PER_PAGE * TABLE_MAX_PAGES;
 
+#[derive(Debug)]
+enum PrepareErr {
+  SyntaxError(String),
+  UnrecognizedError(String)
+}
+
+type PrepareResult<T> = Result<T, PrepareErr>;
+
+#[derive(Debug)]
+enum ExecuteErr {
+  TableFull
+}
+
+type ExecuteResult<T> = Result<T, ExecuteErr>;
+
 enum MetaCommandResult {
   Success,
   Unrecognized
@@ -40,9 +60,17 @@ enum MetaCommandResult {
 
 enum StatementType {
   Insert,
-  Select
+  Select,
+  None
 }
 
+impl Default for StatementType {
+  fn default() -> StatementType {
+    StatementType::None
+  }
+}
+
+#[derive(Default)]
 struct Statement {
   typ: StatementType,
   row: Option<Row>
@@ -51,8 +79,8 @@ struct Statement {
 #[derive(Clone, Debug)]
 struct Row {
   id: u32,
-  username: String,
-  email: String
+  username: ArrayString<[u8; USERNAME_SIZE]>,
+  email: ArrayString<[u8; EMAIL_SIZE]> 
 }
 
 impl fmt::Display for Row {
@@ -62,22 +90,22 @@ impl fmt::Display for Row {
 }
 
 impl Row {
-  fn serialize(&self) -> Vec<u8> {
-    let mut buf = vec![0; ROW_SIZE];
-    BigEndian::write_u32(&mut buf, self.id);
-    Row::write_string(&mut buf, ID_SIZE, USERNAME_SIZE, &self.username);
-    Row::write_string(&mut buf, EMAIL_OFFSET, EMAIL_SIZE, &self.email);
+  // fn serialize(&self) -> Vec<u8> {
+  //   let mut buf = vec![0; ROW_SIZE];
+  //   BigEndian::write_u32(&mut buf, self.id);
+  //   Row::write_string(&mut buf, ID_SIZE, USERNAME_SIZE, &self.username);
+  //   Row::write_string(&mut buf, EMAIL_OFFSET, EMAIL_SIZE, &self.email);
 
-    buf
-  }
+  //   buf
+  // }
 
-  fn deserialize(buf: Vec<u8>) -> Row {
-    let id = BigEndian::read_u32(&buf);
-    let username = Row::read_string(&buf, ID_SIZE, USERNAME_SIZE);
-    let email = Row::read_string(&buf, EMAIL_OFFSET, EMAIL_SIZE);
+  // fn deserialize(buf: Vec<u8>) -> Row {
+  //   let id = BigEndian::read_u32(&buf);
+  //   let username = Row::read_string(&buf, ID_SIZE, USERNAME_SIZE);
+  //   let email = Row::read_string(&buf, EMAIL_OFFSET, EMAIL_SIZE);
 
-    Row { id, username, email }
-  }
+  //   Row { id, username, email }
+  // }
 
   fn write_string(buf: &mut Vec<u8>, pos: usize, max_len: usize, s: &str) {
     let bytes = s.as_bytes().to_owned();
@@ -107,20 +135,21 @@ impl Row {
   }
 }
 
-#[derive(Debug)]
-enum PrepareErr {
-  SyntaxError(String),
-  UnrecognizedError(String)
+struct Page {
+  rows: [Option<Row>; ROWS_PER_PAGE]
 }
 
-type PrepareResult<T> = Result<T, PrepareErr>;
-
-#[derive(Debug)]
-enum ExecuteErr {
-  TableFull
+struct Table {
+  pages: [Option<Page>; TABLE_MAX_PAGES],
+  num_rows: usize
 }
 
-type ExecuteResult<T> = Result<T, ExecuteErr>;
+impl Default for Table {
+  fn default() -> Table {
+    let pages: [Option<Page>; TABLE_MAX_PAGES] = Default::default();
+    Table { pages: pages, num_rows: 0 }
+  }
+}
 
 fn do_meta_command(command: &str) -> MetaCommandResult {
   match command.trim() {
@@ -136,11 +165,27 @@ fn do_meta_command(command: &str) -> MetaCommandResult {
   }
 }
 
-fn prepare_statement(command: &str) -> PrepareResult<Statement> {
-  if command.starts_with("insert") {
-    Ok(Statement { typ: StatementType::Insert, row: None })
-  } else if command.starts_with("select") {
-    Ok(Statement { typ: StatementType::Select, row: None })
+fn prepare_statement(statement: &str) -> PrepareResult<Statement> {
+  if statement.starts_with("insert") {
+    let mut id: u32;
+    let mut username: String;
+    let mut email: String;
+
+    scan!(statement.as_bytes().iter().cloned() => "insert {} {} {}", id, username, email);
+
+    let row: Row = Row {
+      id,
+      username: ArrayString::<[u8; USERNAME_SIZE]>::from(username.as_str()).unwrap(),
+      email: ArrayString::<[u8; EMAIL_SIZE]>::from(email.as_str()).unwrap()
+    };
+
+    println!("Inserting {}", row);
+    Ok(Statement { typ: StatementType::Insert, row: Some(row) })
+  } else if statement.starts_with("select") {
+    Ok(Statement { 
+      typ: StatementType::Select, 
+      ..Default::default()
+    })
   } else {
     Err(PrepareErr::UnrecognizedError("Unrecognized prepare statement".to_string()))
   }
