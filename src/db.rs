@@ -2,7 +2,7 @@ use std::mem;
 use std::fmt;
 use byteorder::{ByteOrder, BigEndian};
 
-use pager::{Pager, PAGE_SIZE};
+use crate::pager::{Pager, PAGE_SIZE};
 
 const ID_SIZE: usize = mem::size_of::<u32>();
 const USERNAME_SIZE: usize = 32;
@@ -71,5 +71,55 @@ impl Row {
     let bytes = buf[pos..end].to_vec();
 
     String::from_utf8(bytes).unwrap()
+  }
+}
+
+pub struct Table {
+  pager: Pager,
+  pub num_rows: usize,
+}
+
+impl fmt::Display for Table {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    for i in 0..self.num_rows {
+      write!(f, "{}", self.read_row(i))?;
+    }
+
+    write!(f, "----------------------------")
+  }
+}
+
+impl Table {
+  pub fn new() -> Self {
+    let pager = Pager::new();
+    
+    Table { pager, num_rows: pager.num_pages }
+  }
+
+  pub fn close(&mut self) {
+    self.pager.close();
+  }
+
+  pub fn insert_row(&mut self, row: Row) {
+    let bytes = row.serialize();
+
+    let page_index = self.num_rows / ROWS_PER_PAGE;
+    let page = self.pager.page_to_write(page_index);
+    let row_index = (self.num_rows % ROWS_PER_PAGE) * ROW_SIZE;
+
+    for (i, byte) in bytes.iter().enumerate() {
+      page[row_index + i] = byte;
+    }
+
+    self.num_rows += 1;
+  }
+
+  pub fn read_row(&mut self, num_rows: usize) -> Row {
+    let page_index = num_rows / ROWS_PER_PAGE;
+    let page = self.pager.page_to_read(page_index);
+    let row_index = (num_rows % ROWS_PER_PAGE) * ROW_SIZE;
+    let bytes = page[row_index..row_index + ROW_SIZE].to_vec();
+
+    Row::deserialize(bytes)
   }
 }
