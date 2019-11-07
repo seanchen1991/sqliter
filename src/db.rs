@@ -108,7 +108,7 @@ impl Table {
     let row_index = (self.num_rows % ROWS_PER_PAGE) * ROW_SIZE;
 
     for (i, byte) in bytes.iter().enumerate() {
-      page[row_index + i] = byte;
+      page[row_index + i] = *byte;
     }
 
     self.num_rows += 1;

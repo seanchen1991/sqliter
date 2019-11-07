@@ -9,7 +9,7 @@ type Page = Vec<u8>;
 
 static FILE_PATH: &str = "/Users/seanchen/Projects/sqliter/database.db";
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Pager {
   pub file: File,
   pub pages: Vec<Option<Page>>,
